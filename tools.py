@@ -1,7 +1,7 @@
 """
-Tool executor module for VibeCLI
-Handles the 5 main tools: read_file, write_file, append_file, grep_search, execute_shell
-Plus 22 additional tools for comprehensive development workflow
+Legacy tool executor module for VibeCLI - DEPRECATED
+Use the new modular tools package instead
+This file is kept for backward compatibility
 """
 
 import asyncio

@@ -10,19 +10,28 @@ from pathlib import Path
 
 from google import genai
 from google.genai import types
+from config import get_settings
 
 
 class LLMClient:
     """Client for interacting with Gemini API with function calling support using google-genai SDK"""
 
     def __init__(self):
-        self.api_key = os.getenv("GEMINI_API_KEY")
-        if not self.api_key:
-            raise ValueError("GEMINI_API_KEY non trovata nelle variabili d'ambiente")
-
-        # Initialize the new google-genai client
-        self.client = genai.Client(api_key=self.api_key)
-        self.model_name = "gemini-2.0-flash-001"
+        self.settings = get_settings()
+        
+        # Check if API key is available
+        if not self.settings.gemini_api_key:
+            print("⚠️  GEMINI_API_KEY non configurata!")
+            print("📝 Per configurare l'API key:")
+            print("   1. Modifica il file .env")
+            print("   2. Imposta GEMINI_API_KEY=your_api_key_here")
+            print("   3. Oppure esporta la variabile d'ambiente")
+            self.client = None
+        else:
+            # Initialize the new google-genai client
+            self.client = genai.Client(api_key=self.settings.gemini_api_key)
+        
+        self.model_name = self.settings.gemini_model
         self.system_prompt = self._load_system_prompt()
 
         # Function definitions for Gemini (converted to new SDK format)
@@ -524,6 +533,13 @@ class LLMClient:
     ) -> Dict[str, Any]:
         """Generate response from Gemini API with function calling support using new SDK"""
 
+        # Check if client is available
+        if not self.client:
+            return {
+                "content": "❌ Client API non disponibile. Configura GEMINI_API_KEY nel file .env",
+                "function_calls": [],
+            }
+
         # Prepare messages
         contents = self._prepare_contents(user_input, chat_history, project_dir)
 
@@ -622,6 +638,11 @@ class LLMClient:
 
     async def generate_simple_response(self, prompt: str) -> str:
         """Generate a simple text response without function calling using new SDK"""
+        
+        # Check if client is available
+        if not self.client:
+            return "❌ Client API non disponibile. Configura GEMINI_API_KEY nel file .env"
+        
         contents = [types.Content(role="user", parts=[types.Part(text=prompt)])]
 
         config = types.GenerateContentConfig(
