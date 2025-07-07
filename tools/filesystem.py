@@ -15,6 +15,7 @@ from typing import List
 import aiofiles
 from .base import BaseTool, ToolResult
 from performance import SearchOptimizer, AsyncBatchProcessor, MemoryManager
+from config import get_settings
 
 
 class FileSystemTools(BaseTool):
@@ -22,9 +23,16 @@ class FileSystemTools(BaseTool):
     
     def __init__(self):
         super().__init__()
+        self.settings = get_settings()
+        
+        # 🚀 Performance optimizations
         self.search_optimizer = SearchOptimizer()
-        self.batch_processor = AsyncBatchProcessor(max_concurrent=10)
-        self.memory_manager = MemoryManager(max_memory_mb=500)
+        self.batch_processor = AsyncBatchProcessor(max_concurrent=self.settings.max_concurrent_ops)
+        self.memory_manager = MemoryManager(max_memory_mb=self.settings.max_memory_mb)
+        
+        # 💾 Cache for frequent operations
+        self._file_cache = {} if self.settings.cache_enabled else None
+        self._search_cache = {} if self.settings.cache_enabled else None
     
     @property
     def name(self) -> str:
@@ -42,27 +50,31 @@ class FileSystemTools(BaseTool):
         """Not used in this implementation - tools called directly"""
         pass
     
-    async def read_file(self, file_path: str, project_dir: str) -> str:
-        """Read file contents with memory optimization"""
+    async def read_file(self, file_path: str, encoding: str = "utf-8", project_dir: str = "") -> str:
+        """Read file content with caching and memory management"""
         try:
             full_path = self.validate_path(file_path, project_dir)
             
-            if not full_path.exists():
-                raise FileNotFoundError(f"File non trovato: {file_path}")
-                
-            if not full_path.is_file():
-                raise ValueError(f"Il percorso non è un file: {file_path}")
+            # 💾 Check cache first
+            if self._file_cache and str(full_path) in self._file_cache:
+                return f"📄 {file_path}:\n{self._file_cache[str(full_path)]}"
             
-            # Use memory-optimized reading
-            content = await self.memory_manager.smart_file_read(full_path)
+            # 🧠 Memory management for large files
+            file_size = full_path.stat().st_size
+            if file_size > self.settings.max_file_size:
+                return f"❌ File troppo grande ({file_size / 1024 / 1024:.1f}MB). Limite: {self.settings.max_file_size / 1024 / 1024:.1f}MB"
             
-            if content is None:
-                return f"❌ File troppo grande o non leggibile: {file_path}"
+            # 📖 Read with memory management
+            content = await self.memory_manager.read_file_chunked(full_path, encoding)
             
-            return f"📄 Contenuto di {file_path}:\n{content}"
-                
+            # 💾 Cache if enabled
+            if self._file_cache and file_size < self.settings.cache_file_max_size:
+                self._file_cache[str(full_path)] = content
+            
+            return f"📄 {file_path}:\n{content}"
+            
         except Exception as e:
-            return f"❌ Errore lettura file: {str(e)}"
+            return f"❌ Errore lettura {file_path}: {str(e)}"
     
     async def write_file(self, file_path: str, content: str, project_dir: str) -> str:
         """Write content to file with diff display"""
@@ -295,27 +307,44 @@ class FileSystemTools(BaseTool):
         except Exception as e:
             return f"❌ Errore ricerca: {str(e)}"
     
-    async def codebase_search(self, query: str, file_glob: str = "**/*.{py,ts,js}", project_dir: str = "") -> str:
-        """Search in codebase with glob pattern"""
+    async def codebase_search(self, query: str, file_patterns: str = "*.py", project_dir: str = "") -> str:
+        """🔍 Intelligent codebase search with optimization"""
         try:
-            if not query:
-                raise ValueError("query è richiesta")
+            # 💾 Check search cache
+            cache_key = f"{query}:{file_patterns}:{project_dir}"
+            if self._search_cache and cache_key in self._search_cache:
+                return self._search_cache[cache_key]
             
-            base_path = Path(project_dir)
-            matches = []
+            # 🚀 Use optimized search
+            results = await self.search_optimizer.semantic_search(
+                query=query,
+                directory=project_dir,
+                file_patterns=file_patterns.split(","),
+                max_results=self.settings.max_search_results
+            )
             
-            for file_path in base_path.glob(file_glob):
-                if file_path.is_file() and not self.should_skip_file(file_path):
-                    file_matches = await self._search_in_file(file_path, query)
-                    matches.extend(file_matches)
+            if not results:
+                result = f"🔍 Nessun risultato per: {query}"
+            else:
+                result_lines = [f"🔍 Trovati {len(results)} risultati per: {query}\n"]
+                
+                for i, result in enumerate(results[:self.settings.max_search_results], 1):
+                    result_lines.append(f"{i}. {result['file']}:{result['line']}")
+                    result_lines.append(f"   {result['content']}")
+                    if result.get('context'):
+                        result_lines.append(f"   Context: {result['context']}")
+                    result_lines.append("")
+                
+                result = "\n".join(result_lines)
             
-            if not matches:
-                return f"🔍 Nessun match trovato per: {query}"
+            # 💾 Cache result
+            if self._search_cache:
+                self._search_cache[cache_key] = result
             
-            return f"🔍 Trovati {len(matches)} match per '{query}':\n" + "\n".join(matches)
+            return result
             
         except Exception as e:
-            return f"❌ Errore ricerca codebase: {str(e)}"
+            return f"❌ Errore ricerca: {str(e)}"
     
     async def search_replace(self, pattern: str, replacement: str, file_glob: str = "", 
                            preview: bool = True, project_dir: str = "") -> str:

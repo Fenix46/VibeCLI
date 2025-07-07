@@ -24,21 +24,27 @@ class Settings(BaseSettings):
     max_search_results: int = Field(50, env="MAX_SEARCH_RESULTS", description="Maximum search results to return")
     shell_timeout: int = Field(30, env="SHELL_TIMEOUT", description="Shell command timeout in seconds")
     max_output_size: int = Field(2000, env="MAX_OUTPUT_SIZE", description="Maximum output size to display")
+    max_concurrent_ops: int = Field(10, env="MAX_CONCURRENT_OPS", description="Maximum concurrent operations")
+    max_memory_mb: int = Field(500, env="MAX_MEMORY_MB", description="Maximum memory usage in MB")
     
     # Cache Configuration  
     cache_enabled: bool = Field(True, env="CACHE_ENABLED", description="Enable caching")
     cache_ttl_seconds: int = Field(300, env="CACHE_TTL", description="Cache TTL in seconds")
     cache_max_size: int = Field(100, env="CACHE_MAX_SIZE", description="Maximum cache entries")
+    cache_file_max_size: int = Field(1_000_000, env="CACHE_FILE_MAX_SIZE", description="Maximum file size to cache in bytes")
     
     # UI Configuration
     use_colors: bool = Field(True, env="USE_COLORS", description="Enable colored output")
     progress_bars: bool = Field(True, env="PROGRESS_BARS", description="Show progress bars")
     menu_style: str = Field("default", env="MENU_STYLE", description="Menu style theme")
+    show_file_tree: bool = Field(False, env="SHOW_FILE_TREE", description="Show file tree in UI")
+    syntax_highlighting: bool = Field(True, env="SYNTAX_HIGHLIGHTING", description="Enable syntax highlighting")
     
     # Security Configuration
     dangerous_commands_enabled: bool = Field(False, env="DANGEROUS_COMMANDS", description="Allow dangerous shell commands")
     path_traversal_protection: bool = Field(True, env="PATH_PROTECTION", description="Enable path traversal protection")
     auto_confirm_safe: bool = Field(True, env="AUTO_CONFIRM_SAFE", description="Auto-confirm safe operations")
+    dangerous_commands_protection: bool = Field(True, env="DANGEROUS_COMMANDS_PROTECTION", description="Enable dangerous command protection")
     
     # Tool Configuration
     default_linter: str = Field("ruff", env="DEFAULT_LINTER", description="Default code linter")
@@ -54,16 +60,9 @@ class Settings(BaseSettings):
     log_file: Optional[str] = Field(None, env="LOG_FILE", description="Log file path")
     log_format: str = Field("%(asctime)s - %(name)s - %(levelname)s - %(message)s", env="LOG_FORMAT", description="Log format")
     
-    # Custom file patterns
-    skip_patterns: Union[List[str], str] = Field(
-        default=[
-            ".git", "__pycache__", ".pyc", ".pyo", ".pyd",
-            ".so", ".dll", ".dylib", ".exe", ".bin",
-            ".jpg", ".jpeg", ".png", ".gif", ".bmp",
-            ".mp3", ".mp4", ".avi", ".mov", ".pdf",
-            ".zip", ".tar", ".gz", ".bz2", ".7z",
-            "node_modules", ".venv", "venv", ".env"
-        ],
+    # Custom file patterns  
+    skip_patterns: Optional[Union[List[str], str]] = Field(
+        default=None,
         env="SKIP_PATTERNS",
         description="File patterns to skip during operations"
     )
@@ -97,26 +96,33 @@ class Settings(BaseSettings):
             raise ValueError(f"Model must be one of: {valid_models}")
         return v
     
-    @field_validator("skip_patterns", mode="before")
-    def parse_skip_patterns(cls, v):
-        """Parse skip patterns from string if needed"""
+    @field_validator("skip_patterns", mode="after")
+    @classmethod
+    def normalize_skip_patterns(cls, v):
+        """Normalize skip patterns to List[str]"""
+        # Default patterns
+        default_patterns = [".git", "__pycache__", ".pyc", ".pyo", ".pyd", ".so", ".dll", ".dylib", 
+                           ".exe", ".bin", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".mp3", ".mp4", 
+                           ".avi", ".mov", ".pdf", ".zip", ".tar", ".gz", ".bz2", ".7z", "node_modules", 
+                           ".venv", "venv", ".env"]
+        
+        # If None or empty, return default patterns
+        if v is None:
+            return default_patterns
+        
+        # If it's already a list, return as-is
+        if isinstance(v, list):
+            return v if v else default_patterns
+        
+        # If it's a string, parse it
         if isinstance(v, str):
-            # Handle empty string or whitespace-only string
             if not v.strip():
-                return []
-            # Split by comma and clean up whitespace
+                return default_patterns
             patterns = [pattern.strip() for pattern in v.split(",") if pattern.strip()]
-            return patterns
-        elif isinstance(v, list):
-            return v
-        elif v is None:
-            return []
-        else:
-            # Try to convert to string and parse
-            try:
-                return [pattern.strip() for pattern in str(v).split(",") if pattern.strip()]
-            except:
-                return []
+            return patterns if patterns else default_patterns
+        
+        # For any other type, return defaults
+        return default_patterns
     
     def get_cache_config(self) -> Dict[str, Any]:
         """Get cache configuration as dict"""
