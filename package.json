@@ -1,0 +1,80 @@
+{
+  "name": "@vibecli/core",
+  "version": "0.0.1",
+  "description": "Advanced AI agent that lives in your terminal with streaming responses and tool integration",
+  "main": "dist/index.js",
+  "bin": {
+    "vibe": "./bin/vibe"
+  },
+  "files": [
+    "dist/**/*",
+    "bin/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Fenix46/vibecli.git"
+  },
+  "homepage": "https://github.com/Fenix46/vibecli#readme",
+  "bugs": {
+    "url": "https://github.com/Fenix46/vibecli/issues"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "watch": "tsc --watch",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build",
+    "test": "echo \"No tests specified\" && exit 0",
+    "lint": "echo \"No linting configured\" && exit 0",
+    "clean": "rm -rf dist/",
+    "publish:script": "./scripts/publish.sh",
+    "version:patch": "npm version patch",
+    "version:minor": "npm version minor",
+    "version:major": "npm version major"
+  },
+  "keywords": [
+    "ai", 
+    "cli", 
+    "terminal", 
+    "agent", 
+    "assistant", 
+    "openai", 
+    "anthropic", 
+    "google", 
+    "streaming", 
+    "development", 
+    "coding", 
+    "git", 
+    "file-operations"
+  ],
+  "author": "Emanuele Scarlata <your.email@example.com>",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "commander": "^11.1.0",
+    "inquirer": "^9.2.12",
+    "chalk": "^4.1.2",
+    "ora": "^5.4.1",
+    "openai": "^4.20.1",
+    "@anthropic-ai/sdk": "^0.24.3",
+    "@google/generative-ai": "^0.2.1",
+    "simple-git": "^3.20.0",
+    "fs-extra": "^11.1.1",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.0",
+    "@types/inquirer": "^9.0.7",
+    "@types/fs-extra": "^11.0.4",
+    "typescript": "^5.2.2",
+    "ts-node": "^10.9.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
