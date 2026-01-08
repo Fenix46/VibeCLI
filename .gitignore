@@ -1,0 +1,26 @@
+﻿# Node and build output
+node_modules/
+dist/
+
+# Logs
+logs/
+*.log
+
+# Local state
+.state/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local config and sessions
+.sessions/
+
+# Coverage
+coverage/
+
+# Temporary
+*.tmp
+*.temp

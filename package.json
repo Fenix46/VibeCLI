@@ -1,0 +1,38 @@
+﻿{
+  "name": "local-cli",
+  "version": "0.1.0",
+  "description": "local: cross-platform CLI for local llama-server workflows",
+  "type": "module",
+  "bin": {
+    "local": "dist/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --config tsconfig.test.json",
+    "lint": "node -e \"console.log('no lint')\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "cli-progress": "^3.12.0",
+    "commander": "^12.1.0",
+    "execa": "^9.2.0",
+    "fs-extra": "^11.2.0",
+    "inquirer": "^9.2.22",
+    "ora": "^8.1.1",
+    "undici": "^6.19.8",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cli-progress": "^3.11.6",
+    "@types/fs-extra": "^11.0.4",
+    "@types/inquirer": "^9.0.7",
+    "@types/node": "^20.14.10",
+    "tsx": "^4.15.6",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
