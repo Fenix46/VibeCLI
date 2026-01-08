@@ -13,11 +13,32 @@ import { getStatus, startServer, stopServer, readState } from "./server/manager.
 import { getLogsDir } from "./config/dirs.js";
 import { addTask, loadTasks, removeTask } from "./tasks/storage.js";
 import { runTask, tickTasks } from "./tasks/runner.js";
+import { runMainReplMenu } from "./repl/menu.js";
 
 ensureAppDirs();
 
 const program = new Command();
+program.showHelpAfterError();
+program.showSuggestionAfterError();
 program.name("local").description("Local coding assistant CLI").version("0.1.0");
+
+const argv = process.argv.slice(2);
+const wantsHelp = argv.includes("-h") || argv.includes("--help");
+const wantsVersion = argv.includes("-V") || argv.includes("--version");
+const noArgs = argv.length === 0;
+
+program.action(async () => {
+  if (noArgs && !wantsHelp && !wantsVersion) {
+    await runMainReplMenu({ repoPath: process.cwd() });
+  }
+});
+
+program
+  .command("repl")
+  .description("Open the interactive main menu")
+  .action(async () => {
+    await runMainReplMenu({ repoPath: process.cwd() });
+  });
 
 program
   .command("chat")
