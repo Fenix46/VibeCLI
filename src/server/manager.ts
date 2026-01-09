@@ -15,6 +15,8 @@ export type ServerState = {
   port: number;
   modelPath: string;
   startedAt: string;
+  managed?: boolean;
+  ownerPid?: number;
 };
 
 const PID_FILE = "llama-server.pid";
@@ -80,12 +82,35 @@ export async function findFreePort(start: number, maxTries = 20): Promise<number
   throw new Error("No free port found");
 }
 
-export async function startServer(config: AppConfig, modelPath: string): Promise<ServerState> {
+type StartOptions = {
+  managed?: boolean;
+  ownerPid?: number;
+};
+
+type EnsureOptions = StartOptions & {
+  onModelMismatch?: "prompt" | "restart" | "error";
+};
+
+function resolveLlamaServerPath(config: AppConfig): string {
+  if (config.llamaServerPath) {
+    if (!fs.existsSync(config.llamaServerPath)) {
+      throw new Error(`llama-server not found at ${config.llamaServerPath}`);
+    }
+    return config.llamaServerPath;
+  }
+  return "llama-server";
+}
+
+export async function startServer(
+  config: AppConfig,
+  modelPath: string,
+  options: StartOptions = {}
+): Promise<ServerState> {
   fs.ensureDirSync(getStateDir());
   fs.ensureDirSync(getLogsDir());
   const logPath = path.join(getLogsDir(), "llama-server.log");
   const port = await findFreePort(config.serverPort);
-  const exe = config.llamaServerPath ?? "llama-server";
+  const exe = resolveLlamaServerPath(config);
 
   const args = ["-m", modelPath, "-c", String(config.ctxSize), "--port", String(port)];
   if (config.gpuLayers > 0) {
@@ -108,11 +133,15 @@ export async function startServer(config: AppConfig, modelPath: string): Promise
   }
 
   fs.writeFileSync(getPidPath(), String(child.pid), "utf8");
+  const managed = Boolean(options.managed);
+  const ownerPid = managed ? (options.ownerPid ?? process.pid) : undefined;
   const state: ServerState = {
     pid: child.pid,
     port,
     modelPath,
-    startedAt: new Date().toISOString()
+    startedAt: new Date().toISOString(),
+    managed,
+    ownerPid
   };
   writeState(state);
   logInfo("llama-server started", state);
@@ -145,20 +174,32 @@ export async function getStatus(): Promise<{ running: boolean; state?: ServerSta
   return { running: true, state };
 }
 
-export async function ensureServer(config: AppConfig, modelPath: string): Promise<ServerState> {
+export async function ensureServer(
+  config: AppConfig,
+  modelPath: string,
+  options: EnsureOptions = {}
+): Promise<ServerState> {
   // Use lock to prevent race conditions when multiple processes try to start server
   return withFileLock(getLockPath(), async () => {
     const status = await getStatus();
     if (status.running && status.state) {
       if (status.state.modelPath !== modelPath) {
+        const onMismatch = options.onModelMismatch ?? "prompt";
+        if (onMismatch === "restart") {
+          await stopServer();
+          return startServer(config, modelPath, options);
+        }
+        if (onMismatch === "error") {
+          throw new Error("llama-server is running with a different model.");
+        }
         const ok = await confirm("llama-server is running with a different model. Restart?", true);
         if (!ok) throw new Error("Model mismatch; aborting.");
         await stopServer();
-        return startServer(config, modelPath);
+        return startServer(config, modelPath, options);
       }
       return status.state;
     }
-    return startServer(config, modelPath);
+    return startServer(config, modelPath, options);
   });
 }
 
@@ -202,4 +243,12 @@ export async function stopIfIdle(idleMinutes: number): Promise<boolean> {
     return true;
   }
   return false;
+}
+
+export async function stopManagedServerOnExit(): Promise<boolean> {
+  const state = readState();
+  if (!state?.managed) return false;
+  if (state.ownerPid && state.ownerPid !== process.pid) return false;
+  await stopServer();
+  return true;
 }

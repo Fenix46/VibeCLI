@@ -9,13 +9,14 @@ import { loadRegistry, getDefaultModel } from "./models/registry.js";
 import { runChatRepl } from "./chat/repl.js";
 import { runCodeAgent } from "./agent/engine.js";
 import { runDoctor } from "./utils/doctor.js";
-import { getStatus, startServer, stopServer, readState } from "./server/manager.js";
+import { getStatus, startServer, stopManagedServerOnExit, stopServer, readState } from "./server/manager.js";
 import { getLogsDir } from "./config/dirs.js";
 import { addTask, loadTasks, removeTask } from "./tasks/storage.js";
 import { runTask, tickTasks } from "./tasks/runner.js";
 import { runMainReplMenu } from "./repl/menu.js";
 
 ensureAppDirs();
+registerShutdownHandlers();
 
 const program = new Command();
 program.showHelpAfterError();
@@ -212,3 +213,20 @@ program.parseAsync(process.argv).catch((err) => {
   console.error(chalk.red(String(err)));
   process.exit(1);
 });
+
+function registerShutdownHandlers(): void {
+  const shutdown = async () => {
+    try {
+      await stopManagedServerOnExit();
+    } finally {
+      process.exit(0);
+    }
+  };
+
+  process.on("SIGINT", () => {
+    void shutdown();
+  });
+  process.on("SIGTERM", () => {
+    void shutdown();
+  });
+}

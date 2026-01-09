@@ -1,7 +1,7 @@
 ﻿import readline from "readline";
 import chalk from "chalk";
 import { loadConfig } from "../config/index.js";
-import { ensureServer, getServerBaseUrl, stopIfIdle } from "../server/manager.js";
+import { ensureServer, getServerBaseUrl, stopIfIdle, stopManagedServerOnExit } from "../server/manager.js";
 import { streamChatCompletion, ChatMessage } from "../server/llmClient.js";
 import { getDefaultModel } from "../models/registry.js";
 import { saveSession } from "../utils/sessions.js";
@@ -11,7 +11,10 @@ export async function runChatRepl(modelPath?: string): Promise<void> {
   const model = modelPath ? { localPath: modelPath } : getDefaultModel();
   if (!model) throw new Error("No model installed. Use `local model install`.");
 
-  const state = await ensureServer(config, model.localPath);
+  const state = await ensureServer(config, model.localPath, {
+    managed: true,
+    ownerPid: process.pid
+  });
   const baseUrl = getServerBaseUrl(state.port);
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const messages: ChatMessage[] = [{ role: "system", content: "You are a helpful assistant." }];
@@ -20,7 +23,10 @@ export async function runChatRepl(modelPath?: string): Promise<void> {
     rl.question(chalk.green("local> "), async (input) => {
       if (input.trim().toLowerCase() === "/exit") {
         rl.close();
-        await stopIfIdle(config.idleTimeoutMinutes);
+        const stopped = await stopManagedServerOnExit();
+        if (!stopped) {
+          await stopIfIdle(config.idleTimeoutMinutes);
+        }
         saveSession("chat", "chat-session", messages);
         return;
       }

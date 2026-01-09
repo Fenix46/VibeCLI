@@ -3,7 +3,7 @@ import fs from "fs-extra";
 import ora from "ora";
 import chalk from "chalk";
 import { loadConfig } from "../config/index.js";
-import { ensureServer, getServerBaseUrl, stopIfIdle } from "../server/manager.js";
+import { ensureServer, getServerBaseUrl, stopIfIdle, stopManagedServerOnExit } from "../server/manager.js";
 import { streamChatCompletion, chatCompletion, ChatMessage } from "../server/llmClient.js";
 import { confirm } from "../utils/confirm.js";
 import { getRepoRoot } from "../utils/repo.js";
@@ -36,7 +36,10 @@ export async function runCodeAgent(options: CodeAgentOptions): Promise<void> {
   const spinner = ora("Preparing agent...").start();
   const repoRoot = (await getRepoRoot(options.repoPath)) ?? options.repoPath;
 
-  const state = await ensureServer(config, options.modelPath);
+  const state = await ensureServer(config, options.modelPath, {
+    managed: true,
+    ownerPid: process.pid
+  });
   const baseUrl = getServerBaseUrl(state.port);
   spinner.succeed(`Connected to llama-server on ${baseUrl}`);
 
@@ -109,7 +112,10 @@ export async function runCodeAgent(options: CodeAgentOptions): Promise<void> {
     throw new Error("Unexpected response type");
   }
 
-  await stopIfIdle(config.idleTimeoutMinutes);
+  const stopped = await stopManagedServerOnExit();
+  if (!stopped) {
+    await stopIfIdle(config.idleTimeoutMinutes);
+  }
 }
 
 async function executeTool(

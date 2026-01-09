@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Box, Text, useApp } from "ink";
+import { Box, Text, useApp, useInput } from "ink";
 import { MainMenu } from "./views/MainMenu.js";
 import { ChatView } from "./views/ChatView.js";
 import { ModelManager } from "./views/ModelManager.js";
@@ -9,7 +9,7 @@ import { ServerView } from "./views/ServerView.js";
 import { OnboardingView } from "./views/OnboardingView.js";
 import { loadConfig } from "../config/index.js";
 import { getDefaultModel, loadRegistry } from "../models/registry.js";
-import { ensureServer, getServerBaseUrl, stopServer } from "../server/manager.js";
+import { ensureServer, getServerBaseUrl, stopManagedServerOnExit } from "../server/manager.js";
 
 export type View = "onboarding" | "main_menu" | "chat" | "models" | "tasks" | "config" | "server";
 
@@ -50,7 +50,7 @@ export function App() {
 
     // Cleanup on exit
     return () => {
-      stopServer().catch(() => {});
+      stopManagedServerOnExit().catch(() => {});
     };
   }, []);
 
@@ -64,7 +64,11 @@ export function App() {
         return false;
       }
 
-      const serverState = await ensureServer(config, model.localPath);
+      const serverState = await ensureServer(config, model.localPath, {
+        managed: true,
+        ownerPid: process.pid,
+        onModelMismatch: "error"
+      });
       setState((prev) => ({
         ...prev,
         serverUrl: getServerBaseUrl(serverState.port),
@@ -91,6 +95,12 @@ export function App() {
   const handleExit = () => {
     exit();
   };
+
+  useInput((input, key) => {
+    if (key.ctrl && input === "q") {
+      exit();
+    }
+  });
 
   return (
     <Box flexDirection="column" height="100%">
