@@ -2,6 +2,7 @@
 import path from "path";
 import { ensureAppDirs, getConfigDir } from "../config/dirs.js";
 import { loadConfig, saveConfig } from "../config/index.js";
+import { writeJsonWithBackupSync } from "../utils/fs.js";
 
 export type ModelRecord = {
   id: string;
@@ -16,7 +17,6 @@ export type ModelRecord = {
 };
 
 export type ModelsRegistry = {
-  defaultModelId?: string;
   models: ModelRecord[];
 };
 
@@ -40,43 +40,44 @@ export function loadRegistry(): ModelsRegistry {
 export function saveRegistry(registry: ModelsRegistry): void {
   ensureAppDirs();
   const file = getRegistryPath();
-  fs.writeJsonSync(file, registry, { spaces: 2 });
+  writeJsonWithBackupSync(file, registry);
 }
 
 export function addModel(record: ModelRecord): void {
   const registry = loadRegistry();
   registry.models.push(record);
+  saveRegistry(registry);
+
+  // Set as default if no default model is configured
   const config = loadConfig();
-  if (!registry.defaultModelId) registry.defaultModelId = record.id;
   if (!config.defaultModelId) {
     config.defaultModelId = record.id;
     saveConfig(config);
   }
-  saveRegistry(registry);
 }
 
 export function removeModel(id: string): ModelRecord | null {
   const registry = loadRegistry();
   const index = registry.models.findIndex((m) => m.id === id);
   if (index === -1) return null;
+
   const [removed] = registry.models.splice(index, 1);
-  if (registry.defaultModelId === id) {
-    registry.defaultModelId = registry.models[0]?.id;
-  }
+  saveRegistry(registry);
+
+  // Update default if the removed model was default
   const config = loadConfig();
   if (config.defaultModelId === id) {
-    config.defaultModelId = registry.defaultModelId;
+    config.defaultModelId = registry.models[0]?.id;
     saveConfig(config);
   }
-  saveRegistry(registry);
+
   return removed;
 }
 
 export function setDefaultModel(id: string): boolean {
   const registry = loadRegistry();
   if (!registry.models.find((m) => m.id === id)) return false;
-  registry.defaultModelId = id;
-  saveRegistry(registry);
+
   const config = loadConfig();
   config.defaultModelId = id;
   saveConfig(config);
@@ -86,6 +87,6 @@ export function setDefaultModel(id: string): boolean {
 export function getDefaultModel(): ModelRecord | null {
   const registry = loadRegistry();
   const config = loadConfig();
-  const id = config.defaultModelId ?? registry.defaultModelId;
+  const id = config.defaultModelId;
   return registry.models.find((m) => m.id === id) ?? registry.models[0] ?? null;
 }

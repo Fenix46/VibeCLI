@@ -148,12 +148,35 @@ async function executeTool(
         console.log(chalk.yellow(`dry-run: would run ${cmd}`));
         return { dryRun: true, command: cmd };
       }
+
+      // Check for dangerous patterns
       if (isRiskyCommand(cmd)) {
-        const ok = await confirm(`Run risky command: ${cmd}?`, false);
+        throw new Error(`Dangerous command blocked: ${cmd}`);
+      }
+
+      // Parse command and arguments safely
+      const parsed = parseCommand(cmd);
+      if (!parsed) {
+        throw new Error(`Cannot parse command safely: ${cmd}`);
+      }
+
+      // Always require confirmation for commands (unless whitelisted)
+      if (!isWhitelistedCommand(parsed.command)) {
+        const ok = await confirm(`Run command: ${cmd}?`, false);
         if (!ok) throw new Error("Command denied");
       }
-      const { stdout, stderr } = await execa(cmd, { cwd: repoRoot, shell: true });
-      return { stdout, stderr };
+
+      // Execute with argument array (no shell injection possible)
+      try {
+        const { stdout, stderr } = await execa(parsed.command, parsed.args, {
+          cwd: repoRoot,
+          shell: false,
+          timeout: 30000 // 30 second timeout
+        });
+        return { stdout, stderr };
+      } catch (err: any) {
+        return { error: err.message, stdout: err.stdout || "", stderr: err.stderr || "" };
+      }
     }
     case "GIT_STATUS": {
       const { stdout } = await execa("git", ["status", "--porcelain"], { cwd: repoRoot });
@@ -202,7 +225,91 @@ function listTree(root: string): string[] {
 }
 
 function isRiskyCommand(cmd: string): boolean {
-  return /(rm\s|del\s|format\s|mkfs|dd\s|shutdown|reboot|:>|>\s*\/dev)/i.test(cmd);
+  // Block commands with dangerous patterns
+  const dangerousPatterns = [
+    /rm\s+(-rf|-r|-f)/i, // rm with recursive/force flags
+    /del\s+/i, // Windows delete
+    /format\s/i, // Format drives
+    /mkfs/i, // Make filesystem
+    /dd\s/i, // Disk duplicator
+    /shutdown/i,
+    /reboot/i,
+    /halt/i,
+    /:>/,  // Bash redirect that clears files
+    />\s*\/dev/i, // Writing to device files
+    /chmod\s+777/i, // Dangerous permissions
+    /sudo\s/i, // Privilege escalation
+    /curl.*\|\s*(bash|sh)/i, // Download and execute
+    /wget.*\|\s*(bash|sh)/i, // Download and execute
+    /eval\s/i, // Code evaluation
+    /powershell.*Remove-Item/i, // PowerShell remove
+    /;\s*rm/i, // Chained rm command
+    /&&\s*rm/i, // Chained rm command
+  ];
+
+  return dangerousPatterns.some((pattern) => pattern.test(cmd));
+}
+
+/**
+ * Whitelist of safe commands that don't require confirmation
+ */
+function isWhitelistedCommand(cmd: string): boolean {
+  const whitelist = [
+    "ls", "dir", "pwd", "cat", "head", "tail", "echo",
+    "date", "whoami", "hostname", "uname",
+    "npm", "node", "python", "python3", "pip", "pipenv",
+    "cargo", "rustc", "go", "java", "javac", "mvn", "gradle",
+    "make", "cmake", "gcc", "g++", "clang",
+    "git", // git commands are generally safe for read operations
+  ];
+  return whitelist.includes(cmd.toLowerCase());
+}
+
+/**
+ * Parse command string into command and arguments array
+ * Simple parser that handles basic quoting
+ */
+function parseCommand(cmdString: string): { command: string; args: string[] } | null {
+  cmdString = cmdString.trim();
+  if (!cmdString) return null;
+
+  // Block commands with shell operators (pipes, redirects, etc)
+  if (/[|&;<>]/.test(cmdString)) {
+    return null; // Cannot safely parse shell operators
+  }
+
+  // Simple tokenizer that handles quotes
+  const tokens: string[] = [];
+  let current = "";
+  let inQuote = false;
+  let quoteChar = "";
+
+  for (let i = 0; i < cmdString.length; i++) {
+    const char = cmdString[i];
+
+    if (!inQuote && (char === '"' || char === "'")) {
+      inQuote = true;
+      quoteChar = char;
+    } else if (inQuote && char === quoteChar) {
+      inQuote = false;
+      quoteChar = "";
+    } else if (!inQuote && char === " ") {
+      if (current) {
+        tokens.push(current);
+        current = "";
+      }
+    } else {
+      current += char;
+    }
+  }
+
+  if (current) tokens.push(current);
+  if (tokens.length === 0) return null;
+
+  return {
+    command: tokens[0],
+    args: tokens.slice(1)
+  };
 }
 
 function parseJson(text: string): any {

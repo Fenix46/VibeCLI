@@ -5,6 +5,7 @@ import fs from "fs-extra";
 import crypto from "crypto";
 import { searchModels, getModelFiles, downloadModelFile } from "../hf/client.js";
 import { addModel, loadRegistry, removeModel, setDefaultModel } from "./registry.js";
+import { loadConfig } from "../config/index.js";
 import { safeFileName } from "../utils/fs.js";
 
 export async function modelSearch(query: string): Promise<void> {
@@ -68,8 +69,9 @@ export async function modelList(): Promise<void> {
     console.log("No models installed.");
     return;
   }
+  const config = loadConfig();
   for (const model of registry.models) {
-    const isDefault = model.id === registry.defaultModelId;
+    const isDefault = model.id === config.defaultModelId;
     console.log(`${isDefault ? "*" : " "} ${model.id} -> ${model.localPath}`);
   }
 }

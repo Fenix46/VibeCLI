@@ -29,7 +29,11 @@ const noArgs = argv.length === 0;
 
 program.action(async () => {
   if (noArgs && !wantsHelp && !wantsVersion) {
-    await runMainReplMenu({ repoPath: process.cwd() });
+    // Launch TUI by default
+    const { render } = await import("ink");
+    const { App } = await import("./tui/App.js");
+    const React = await import("react");
+    render(React.createElement(App));
   }
 });
 

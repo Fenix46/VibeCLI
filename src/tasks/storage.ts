@@ -1,6 +1,7 @@
 ﻿import fs from "fs-extra";
 import path from "path";
 import { ensureAppDirs, getConfigDir } from "../config/dirs.js";
+import { writeJsonWithBackupSync } from "../utils/fs.js";
 
 export type TaskType = "chat" | "code";
 
@@ -53,7 +54,7 @@ export function loadTasks(): TaskStore {
 
 export function saveTasks(store: TaskStore): void {
   ensureAppDirs();
-  fs.writeJsonSync(getTasksPath(), store, { spaces: 2 });
+  writeJsonWithBackupSync(getTasksPath(), store);
 }
 
 export function addTask(task: TaskDefinition): void {

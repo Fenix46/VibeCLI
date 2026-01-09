@@ -8,6 +8,7 @@ import { AppConfig } from "../config/schema.js";
 import { confirm } from "../utils/confirm.js";
 import { execa } from "execa";
 import { logInfo, logWarn } from "../utils/logger.js";
+import { withFileLock } from "../utils/fs.js";
 
 export type ServerState = {
   pid: number;
@@ -19,6 +20,7 @@ export type ServerState = {
 const PID_FILE = "llama-server.pid";
 const STATE_FILE = "llama-server.json";
 const LAST_USED_FILE = "llama-server.lastused";
+const LOCK_FILE = "llama-server.lock";
 
 function getPidPath(): string {
   return path.join(getStateDir(), PID_FILE);
@@ -30,6 +32,10 @@ function getStatePath(): string {
 
 function getLastUsedPath(): string {
   return path.join(getStateDir(), LAST_USED_FILE);
+}
+
+function getLockPath(): string {
+  return path.join(getStateDir(), LOCK_FILE);
 }
 
 export function getServerBaseUrl(port: number): string {
@@ -93,6 +99,10 @@ export async function startServer(config: AppConfig, modelPath: string): Promise
     windowsHide: true
   });
   child.unref();
+
+  // Close file descriptor after spawn to prevent leak
+  fs.closeSync(out);
+
   if (!child.pid) {
     throw new Error("Failed to start llama-server");
   }
@@ -136,17 +146,20 @@ export async function getStatus(): Promise<{ running: boolean; state?: ServerSta
 }
 
 export async function ensureServer(config: AppConfig, modelPath: string): Promise<ServerState> {
-  const status = await getStatus();
-  if (status.running && status.state) {
-    if (status.state.modelPath !== modelPath) {
-      const ok = await confirm("llama-server is running with a different model. Restart?", true);
-      if (!ok) throw new Error("Model mismatch; aborting.");
-      await stopServer();
-      return startServer(config, modelPath);
+  // Use lock to prevent race conditions when multiple processes try to start server
+  return withFileLock(getLockPath(), async () => {
+    const status = await getStatus();
+    if (status.running && status.state) {
+      if (status.state.modelPath !== modelPath) {
+        const ok = await confirm("llama-server is running with a different model. Restart?", true);
+        if (!ok) throw new Error("Model mismatch; aborting.");
+        await stopServer();
+        return startServer(config, modelPath);
+      }
+      return status.state;
     }
-    return status.state;
-  }
-  return startServer(config, modelPath);
+    return startServer(config, modelPath);
+  });
 }
 
 export async function waitForHealthy(port: number, timeoutMs = 60000): Promise<void> {

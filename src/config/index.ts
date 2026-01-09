@@ -3,6 +3,7 @@ import path from "path";
 import { ensureAppDirs, getConfigDir } from "./dirs.js";
 import { AppConfig, configSchema, defaultConfig } from "./schema.js";
 import { logWarn } from "../utils/logger.js";
+import { writeJsonWithBackupSync } from "../utils/fs.js";
 
 const CONFIG_FILE = "config.json";
 
@@ -24,7 +25,7 @@ export function loadConfig(): AppConfig {
   } catch (err) {
     logWarn("Failed to load config.json, using defaults", { error: String(err) });
     const defaults = defaultConfig();
-    fs.writeJsonSync(file, defaults, { spaces: 2 });
+    writeJsonWithBackupSync(file, defaults);
     return defaults;
   }
 }
@@ -32,5 +33,5 @@ export function loadConfig(): AppConfig {
 export function saveConfig(config: AppConfig): void {
   ensureAppDirs();
   const file = getConfigPath();
-  fs.writeJsonSync(file, configSchema.parse(config), { spaces: 2 });
+  writeJsonWithBackupSync(file, configSchema.parse(config));
 }
