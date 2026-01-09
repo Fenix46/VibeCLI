@@ -2,9 +2,11 @@
 import chalk from "chalk";
 import { loadConfig } from "../config/index.js";
 import { ensureServer, getServerBaseUrl, stopIfIdle, stopManagedServerOnExit } from "../server/manager.js";
-import { streamChatCompletion, ChatMessage } from "../server/llmClient.js";
+import { ChatMessage } from "../server/llmClient.js";
 import { getDefaultModel } from "../models/registry.js";
 import { saveSession } from "../utils/sessions.js";
+import { createChatSystemMessages, runToolAwareCompletion } from "./tooling.js";
+import { getRepoRoot } from "../utils/repo.js";
 
 export async function runChatRepl(modelPath?: string): Promise<void> {
   const config = loadConfig();
@@ -17,7 +19,8 @@ export async function runChatRepl(modelPath?: string): Promise<void> {
   });
   const baseUrl = getServerBaseUrl(state.port);
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const messages: ChatMessage[] = [{ role: "system", content: "You are a helpful assistant." }];
+  const repoRoot = (await getRepoRoot(process.cwd())) ?? process.cwd();
+  const messages: ChatMessage[] = [...createChatSystemMessages(repoRoot)];
 
   const ask = (): void => {
     rl.question(chalk.green("local> "), async (input) => {
@@ -32,8 +35,8 @@ export async function runChatRepl(modelPath?: string): Promise<void> {
       }
       messages.push({ role: "user", content: input });
       process.stdout.write(chalk.cyan("assistant> "));
-      const full = await streamChatCompletion(baseUrl, messages, (token) => process.stdout.write(token));
-      process.stdout.write("\n");
+      const full = await runToolAwareCompletion(baseUrl, messages, repoRoot);
+      process.stdout.write(full + "\n");
       messages.push({ role: "assistant", content: full });
       ask();
     });

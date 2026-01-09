@@ -96,6 +96,15 @@ function resolveLlamaServerPath(config: AppConfig): string {
     if (!fs.existsSync(config.llamaServerPath)) {
       throw new Error(`llama-server not found at ${config.llamaServerPath}`);
     }
+    const stats = fs.statSync(config.llamaServerPath);
+    if (stats.isDirectory()) {
+      const exeName = process.platform === "win32" ? "llama-server.exe" : "llama-server";
+      const candidate = path.join(config.llamaServerPath, exeName);
+      if (!fs.existsSync(candidate)) {
+        throw new Error(`llama-server not found in directory: ${candidate}`);
+      }
+      return candidate;
+    }
     return config.llamaServerPath;
   }
   return "llama-server";
@@ -124,6 +133,19 @@ export async function startServer(
     windowsHide: true
   });
   child.unref();
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.off("error", onError);
+      resolve();
+    }, 200);
+    const onError = (err: Error) => {
+      clearTimeout(timer);
+      reject(err);
+    };
+    child.once("error", onError);
+  }).catch((err) => {
+    throw new Error(`Failed to spawn llama-server: ${err.message}`);
+  });
 
   // Close file descriptor after spawn to prevent leak
   fs.closeSync(out);

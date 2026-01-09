@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
-import { ChatMessage, streamChatCompletion } from "../../server/llmClient.js";
+import { ChatMessage } from "../../server/llmClient.js";
 import { handleSlashCommand } from "../commands.js";
+import { createChatSystemMessages, runToolAwareCompletion } from "../../chat/tooling.js";
 
 type Message = {
   role: "user" | "assistant" | "system";
@@ -17,9 +18,11 @@ type Props = {
 
 export function ChatView({ serverUrl, modelPath, onBack }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [llmMessages, setLlmMessages] = useState<ChatMessage[]>(
+    () => createChatSystemMessages(process.cwd())
+  );
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [currentResponse, setCurrentResponse] = useState("");
   const [showHelp, setShowHelp] = useState(true);
 
   useInput((input, key) => {
@@ -39,7 +42,7 @@ export function ChatView({ serverUrl, modelPath, onBack }: Props) {
     if (userInput.startsWith("/")) {
       if (userInput === "/clear") {
         setMessages([]);
-        setCurrentResponse("");
+        setLlmMessages(createChatSystemMessages(process.cwd()));
         return;
       }
 
@@ -54,35 +57,17 @@ export function ChatView({ serverUrl, modelPath, onBack }: Props) {
 
     // Add user message
     const userMessage: Message = { role: "user", content: userInput };
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
+    setMessages((prev) => [...prev, userMessage]);
 
-    // Stream AI response
+    // Tool-aware response (non-streaming)
     setIsStreaming(true);
-    setCurrentResponse("");
 
     try {
-      const chatMessages: ChatMessage[] = newMessages.map((m) => ({
-        role: m.role as any,
-        content: m.content
-      }));
-
-      let fullResponse = "";
-      await streamChatCompletion(
-        serverUrl,
-        chatMessages,
-        (token) => {
-          fullResponse += token;
-          setCurrentResponse(fullResponse);
-        }
-      );
-
-      // Save final response
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: fullResponse }
-      ]);
-      setCurrentResponse("");
+      const nextLlmMessages = [...llmMessages, { role: "user", content: userInput }];
+      const fullResponse = await runToolAwareCompletion(serverUrl, nextLlmMessages, process.cwd());
+      nextLlmMessages.push({ role: "assistant", content: fullResponse });
+      setLlmMessages(nextLlmMessages);
+      setMessages((prev) => [...prev, { role: "assistant", content: fullResponse }]);
     } catch (err: any) {
       setMessages((prev) => [
         ...prev,
@@ -130,13 +115,12 @@ export function ChatView({ serverUrl, modelPath, onBack }: Props) {
           </Box>
         ))}
 
-        {isStreaming && currentResponse && (
+        {isStreaming && (
           <Box flexDirection="column" marginBottom={1}>
             <Text bold color="green">
               Assistant:
             </Text>
-            <Text>{currentResponse}</Text>
-            <Text dimColor>▊</Text>
+            <Text dimColor>Thinking...</Text>
           </Box>
         )}
       </Box>
